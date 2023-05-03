@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="krx_rigger",
-    version="0.0.1",
+    version="0.0.5",
     license='MIT',
     author="cheddars",
     author_email="nezahrish@gmail.com",

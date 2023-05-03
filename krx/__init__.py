@@ -1,21 +1,29 @@
 import requests
 import time
 import re
+import logging
 from bs4 import BeautifulSoup
+from cache import AdtCache
 
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+HEADER = {
+    "USER_AGENT" : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+    "SEC_CH_UA": '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"'
+}
+
+logger = logging.getLogger("krx_api")
 
 
 class KrxKindWeb:
-    def __init__(self):
+    def __init__(self, cache: AdtCache):
         self.session = requests.Session()
+        self.cache = cache
         headers = {
             'authority': 'kind.krx.co.kr',
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'accept-language': 'en-US,en;q=0.9',
             'cache-control': 'no-cache',
             'pragma': 'no-cache',
-            'sec-ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
+            'sec-ch-ua': HEADER["SEC_CH_UA"],
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"macOS"',
             'sec-fetch-dest': 'document',
@@ -23,7 +31,7 @@ class KrxKindWeb:
             'sec-fetch-site': 'none',
             'sec-fetch-user': '?1',
             'upgrade-insecure-requests': '1',
-            'user-agent': USER_AGENT,
+            'user-agent': HEADER["USER_AGENT"],
         }
 
         self.session.get('https://kind.krx.co.kr/', headers=headers)
@@ -42,22 +50,59 @@ class KrxKindWeb:
         }
 
         response = self.session.get('https://kind.krx.co.kr/main.do', params=params)
-        print(response.status_code)
+        logger.info(response.status_code)
 
     def fetch_list(self, dt, time_sleep=0.3):
-        items = self._fetch_list(dt, page=1)
-        if items is not None:
-            print(f"dt : {dt}, total : {items.get('total_count')}, page : {items.get('total_page')}")
-            result = items.get("items")
 
-            for p in range(2, items.get("total_page") + 1):
-                temp = self._fetch_list(dt, page=p)
-                result.extend(temp.get("items"))
-                time.sleep(time_sleep)
-                print(f"page : {p}...")
-            return result
-        else:
-            print("list empty")
+        results = []
+        page = 1
+        total_page = 1
+        page_no = 0
+
+        while page <= total_page:
+            items = self._fetch_list(dt, page=page)
+
+            if items is not None:
+                total_count = items.get('total_count')
+                total_page = items.get('total_page')
+                page_no = items.get('page')
+                page = page + 1
+
+                logger.info(f"dt : {dt}, total_count : {total_count}, total_page : {total_page}, current_page : {page_no}")
+
+                result = items.get("items")
+
+                if self.cache is not None:
+                    ## check cache
+                    cache_key = f"krxweb_list_{dt}"
+                    keys = [x.get("doc_id") for x in result]
+                    diff = self.cache.differential(cache_key, keys)
+                    logger.debug(f"diff : {diff}, cached keys : {len(self.cache.keys())}")
+                    diff_ratio = float(len(diff)) / float(len(result)) * 100
+                    if diff_ratio == float(0):
+                        logger.info(f"diff ratio is {diff_ratio}% => break")
+                        break
+                    else:
+                        logger.info(f"diff ratio is {diff_ratio}%")
+                        results.extend([x for x in result if x.get("doc_id") in diff])
+                        self.cache.push_values(cache_key, keys)
+
+                        if diff_ratio < 80:
+                            logger.info(f"break")
+                            break
+                        else:
+                            logger.info(f"pause {time_sleep} sec...")
+                            time.sleep(time_sleep)
+                            continue
+                else:
+                    results.extend(result)
+
+                if total_page == page_no:
+                    logger.info(f"total page reached {total_page}")
+                    break
+
+        return results
+
 
     def _fetch_list(self, dt, page=1):
         headers = {
@@ -69,13 +114,13 @@ class KrxKindWeb:
             'origin': 'https://kind.krx.co.kr',
             'pragma': 'no-cache',
             'referer': 'https://kind.krx.co.kr/disclosure/todaydisclosure.do?method=searchTodayDisclosureMain',
-            'sec-ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
+            'sec-ch-ua': HEADER["SEC_CH_UA"],
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"macOS"',
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+            'user-agent': HEADER["USER_AGENT"],
             'x-requested-with': 'XMLHttpRequest',
         }
 
@@ -110,7 +155,7 @@ class KrxKindWeb:
         current_page, total_page = map(lambda x: int(x), page_info[1].split(":")[1].strip().split("/"))
         total_count = soup.select("div.info")[0].select("em")[0].text
         trs = soup.find("table").select("tr")
-        items = [self._tr2dict(tr, dt) for tr in trs[1:]]
+        items = list(filter(lambda x: x is not None, [self._tr2dict(tr, dt) for tr in trs[1:]]))
         return {
             "page": current_page,
             "total_page": total_page,

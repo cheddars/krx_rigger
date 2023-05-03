@@ -1,3 +1,5 @@
 requests
 bs4
 twine
+
+adt_cache==0.0.4
