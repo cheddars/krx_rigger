@@ -11,9 +11,15 @@ def test_list():
 
     print(items)
 
+def test_document_link():
+    web = KrxKindWeb(cache=MemoryCache())
+    links = web.get_document_link("20230310000434")
+    print(links)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s [%(levelname)s] %(message)s')
     logger = logging.getLogger("krx_api")
     logger.setLevel(logging.DEBUG)
-    test_list()
+
+    test_document_link()

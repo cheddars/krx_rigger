@@ -1,5 +1,7 @@
 requests
 bs4
 twine
+lxml
+redis
 
-adt_cache==0.0.4
+adt_cache==0.0.7
