@@ -2,7 +2,12 @@ import setuptools
 
 setuptools.setup(
     name="krx_rigger",
-    version="0.0.14",
+    version="0.0.29",
+    install_requires=[
+        'requests',
+        'bs4',
+        'adt_cache==0.0.12'
+    ],
     license='MIT',
     author="cheddars",
     author_email="nezahrish@gmail.com",

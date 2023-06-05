@@ -4,4 +4,4 @@ twine
 lxml
 redis
 
-adt_cache==0.0.7
+adt_cache==0.0.12
